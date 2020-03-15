@@ -107,8 +107,11 @@ int main()
 	std::thread t(play, Gamma);
 	t.detach();
 
-	while(running_threads)
+	while (running_threads) {
 		std::this_thread::sleep_for(std::chrono::milliseconds{ 100 });
+	}
+
+	std::cout << '\a';
 }
 
 // Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"

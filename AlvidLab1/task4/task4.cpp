@@ -7,6 +7,33 @@
 #include <list>
 #include <algorithm>
 #include <thread>
+#include <random>
+#include <chrono>
+
+using namespace std::chrono;
+
+struct Timeter {
+    std::string name;
+    time_point<steady_clock> ts;
+    time_point<steady_clock> te;
+
+    Timeter(std::string&& a_name = "") : name(std::move(a_name)) {
+        ts = steady_clock::now();
+    }
+    void reset() {
+        te = steady_clock::now();
+        auto dt = duration<double>(te - ts);
+        microseconds us = duration_cast<microseconds>(dt);
+        milliseconds ms = duration_cast<milliseconds>(us % seconds(1));
+        seconds ss = duration_cast<seconds>(us % minutes(1));
+        us = duration_cast<microseconds>(us % milliseconds(1));
+        std::cout << "[" << name << "]: execution has completed at " << ss.count() << "s::" << ms.count() << "ms::" << us.count() << "us" << std::endl;
+        ts = te;
+    }
+    ~Timeter() {
+        reset();
+    }
+};
 
 // потоковая функция
 template <typename InputIt, typename OutputIt>
@@ -18,49 +45,60 @@ void partialTransform(InputIt first, InputIt last, OutputIt output)
 }
 
 template <class InputCont, class OutputCont>
-void parallelTransform(InputCont const& input, OutputCont& output, size_t thread_count) {
+void parallelTransform(InputCont const& input, OutputCont& output, size_t thread_count) 
+{
     std::vector<std::thread> threads;
-    std::vector<OutputCont> result;
 
     size_t parts = input.size() / thread_count;
-    result.reserve(parts+1);
 
     auto first = input.begin();
     for (size_t i = 0; i < thread_count; ++i) {
         auto last = first;
         std::advance(last, parts);
-        //auto lyambda = [=]() {
-            //partialTransform(first, last, result[i]);
-        //};
-        //threads.emplace_back(lyambda);
+        threads.emplace_back(partialTransform<decltype(first), decltype(output.begin())>, first, last, output.begin() + i*parts);
         first = last;
     }
-//    if (first != input.end())
-//        partialTransform(first, input.end(), result[parts]);
+    if (first != input.end())
+        partialTransform(first, input.end(), output.begin() + thread_count*parts);
     
     for (auto& item : threads)
         item.join();
-
-    for (auto const& item : result)
-        for (auto const& item2 : item)
-            output.push_back(item2);
 }
 
 int main()
 {
-    int thread_count = 1;
-    std::cout << "Core detected: " << std::thread::hardware_concurrency() << std::endl;
-    std::cout << "Please, input thread count: ";
-    std::cin >> thread_count;
+    enum {
+        ELEMENTS_COUNT = 1000000,
+    };
 
-    std::vector<int> i1{ 1,2,512,-1000,777,-356,-9,0,11,-1122344 };
-    std::vector<short> o1;
+    int thread_count = 2;
+    std::cout << "Core(s) detected: " << std::thread::hardware_concurrency() << std::endl;
+    //std::cout << "Please, input thread count: ";
+    //std::cin >> thread_count;
 
-    parallelTransform(i1, o1, thread_count);
-    std::transform(i1.begin(), i1.end(), o1.begin(), [](int value) -> short {
-        return (short) abs(value);
-        });
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<> dis(-32768.0, 32768.0);
 
+    std::vector<short> o1(ELEMENTS_COUNT);
+
+    std::vector<int> i1;
+    for (size_t i = 0; i < ELEMENTS_COUNT; ++i)
+        i1.push_back((int) dis(gen));
+    {
+        Timeter tm("single thread");
+        partialTransform(i1.begin(), i1.end(), o1.begin());
+        std::cout << "output vector size is " << o1.size() << std::endl;
+    }
+
+    i1.clear();
+    for (size_t i = 0; i < ELEMENTS_COUNT; ++i)
+        i1.push_back((int)dis(gen));
+    {
+        Timeter tm("     parallel");
+        parallelTransform(i1, o1, thread_count);
+        std::cout << "output vector size is " << o1.size() << std::endl;
+    }
 }
 
 // Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"
