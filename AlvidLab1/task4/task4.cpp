@@ -18,7 +18,7 @@ struct Timeter {
     time_point<steady_clock> te;
 
     Timeter(std::string&& a_name = "") : name(std::move(a_name)) {
-        ts = steady_clock::now();
+        ts = te = steady_clock::now();
     }
     void reset() {
         te = steady_clock::now();
@@ -31,7 +31,8 @@ struct Timeter {
         ts = te;
     }
     ~Timeter() {
-        reset();
+        if(te != ts)
+            reset();
     }
 };
 
