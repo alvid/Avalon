@@ -84,6 +84,7 @@ int main()
     std::vector<short> o1(ELEMENTS_COUNT);
 
     std::vector<int> i1;
+    i1.reserve(ELEMENTS_COUNT);
     for (size_t i = 0; i < ELEMENTS_COUNT; ++i)
         i1.push_back((int) dis(gen));
     {

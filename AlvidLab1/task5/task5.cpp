@@ -4,149 +4,89 @@
 #include <iostream>
 #include <vector>
 #include <stdexcept>
-#include <mutex>
 #include <chrono>
 #include <random>
 #include <cassert>
-#include <condition_variable>
+#include <atomic>
+
+#include "MtStack.hpp"
 
 ///////////////////////////////////////////////////////////////////////////////
 
-template <typename T>
-class MtStack {
-    std::vector<T> elems;
-    mutable std::mutex mt;
+static std::once_flag once;
+static std::atomic_bool is_producer_started = false;
+static std::atomic_bool is_stopped = false;
 
-public:
-    MtStack();
-    MtStack(MtStack const& ref);
-
-    MtStack& operator=(MtStack const& ref);
-
-    bool empty() const;
-    size_t size() const;
-    void push(T&& elem);
-    void pop(T& elem);
-    std::unique_ptr<T> pop();
-};
-
-template <typename T>
-MtStack<T>::MtStack()
+// поставщик значений для стека
+void producer(MtStack<double> &stack, std::chrono::microseconds timeout_us)
 {
-    std::cout << "stack: created" << std::endl;
-}
-
-template <typename T>
-MtStack<T>::MtStack(MtStack<T> const& ref)
-{
-    std::lock_guard lock(ref.mt);
-    std::copy(ref.elems.begin(), ref.elems.end(), std::back_inserter(elems));
-}
-
-template<typename T>
-MtStack<T>& MtStack<T>::operator=(MtStack<T> const& ref)
-{
-    if (this != *ref) {
-        std::lock(ref.mt, mt);
-        elems.clear();
-        std::copy(ref.elems.begin(), ref.elems.end(), std::back_inserter(elems));
-    }
-    return *this;
-}
-
-template <typename T>
-bool MtStack<T>::empty() const
-{
-    std::lock_guard lock(mt);
-    return elems.empty();
-}
-
-template <typename T>
-size_t MtStack<T>::size() const
-{
-    std::lock_guard lock(mt);
-    return elems.size();
-}
-
-template <typename T>
-void MtStack<T>::push(T&& elem)
-{
-    std::lock_guard lock(mt);
-    elems.push_back(std::move(elem));
-}
-
-template <typename T>
-void MtStack<T>::pop(T& elem)
-{
-    std::lock_guard lock(mt);
-    if (elems.empty()) {
-        throw std::out_of_range("MtStack::pop(): is empty");
-    }
-    elem = elems.back();
-    elems.pop_back();
-}
-
-template <typename T>
-std::unique_ptr<T> MtStack<T>::pop()
-{
-    std::lock_guard lock(mt);
-    if (elems.empty()) {
-        throw std::out_of_range("MtStack::pop(): is empty");
-    }
-    auto elem = std::make_unique<T>(elems.back());
-    elems.pop_back();
-    return elem;
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-std::once_flag producer_started;
-
-void producer(MtStack<double> &stack, std::chrono::milliseconds interval, size_t count, std::condition_variable &cv)
-{
+    size_t count = 0;
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(-1000.0, 1000.0);
 
-    while (count--) {
+    std::call_once(once, [] { is_producer_started = true; });
+
+    while (!is_stopped) {
         stack.push(dis(gen));
-        std::call_once(producer_started, [&cv] { cv.notify_one(); });
-        std::this_thread::sleep_for(interval);
+        ++count;
+        std::this_thread::sleep_for(timeout_us);
     }
-    std::cout << "producer[#" << std::this_thread::get_id() << "]: finish" << std::endl;
+
+    std::cout << "producer[#" << std::this_thread::get_id() << "]: push " << count << " elems" << std::endl;
 }
 
+// получатель значений из стека
 template <typename T>
-void consumer1(MtStack<T>& stack, std::chrono::milliseconds interval)
+void consumer1(MtStack<T>& stack, std::chrono::microseconds timeout_us)
 {
-    while (!stack.empty()) {
+    size_t count = 0;
+    size_t errors = 0;
+
+    while (!is_stopped) {
         try {
             T elem;
+            if (stack.empty())
+                continue;
+            // в этом месте стек может прочитать другой поток и мы поймаем исключение
             stack.pop(elem);
-            std::this_thread::sleep_for(interval);
+            ++count;
+            std::this_thread::sleep_for(timeout_us);
         }
         catch (std::out_of_range &e) {
-            std::cerr << "consumer1: sheet happens - " << e.what() << "!" << std::endl;
-            break;
+            //std::cerr << "consumer1: " << e.what() << std::endl;
+            ++errors;
+            std::this_thread::sleep_for(timeout_us * 100);
         }
     }
-    std::cout << "consumer1[#" << std::this_thread::get_id() << "]: finish" << std::endl;
+    std::cout << "consumer[#" << std::this_thread::get_id() << "]: pop " << count << " elems" 
+        << ", miss " << errors << " times" << std::endl;
 }
 
+// получатель значений из стека
 template <typename T>
-void consumer2(MtStack<T>& stack, std::chrono::milliseconds interval)
+void consumer2(MtStack<T>& stack, std::chrono::microseconds timeout_us)
 {
-    while (!stack.empty()) {
+    size_t count = 0;
+    size_t errors = 0;
+
+    while (!is_stopped) {
         try {
+            if (stack.empty())
+                continue;
+            // в этом месте стек может прочитать другой поток и мы поймаем исключение
             auto pElem = stack.pop();
-            std::this_thread::sleep_for(interval);
+            ++count;
+            std::this_thread::sleep_for(timeout_us);
         }
         catch (std::out_of_range & e) {
-            std::cerr << "consumer2: sheet happens - " << e.what() << "!" << std::endl;
-            break;
+            //std::cerr << "consumer2: " << e.what() << std::endl;
+            ++errors;
+            std::this_thread::sleep_for(timeout_us * 10);
         }
     }
-    std::cout << "consumer2[#" << std::this_thread::get_id() << "]: finish" << std::endl;
+    std::cout << "consumer[#" << std::this_thread::get_id() << "]: pop " << count << " elems"
+        << ", miss " << errors << " times" << std::endl;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -154,44 +94,74 @@ void consumer2(MtStack<T>& stack, std::chrono::milliseconds interval)
 int main(int argc, char *argv[])
 {
     enum {
-        THREAD_COUNT = 5
+        PRODUCER_THREAD_COUNT = 3,
+        RUN_SECONDS = 10,
     };
-    size_t thread_count = THREAD_COUNT;
 
-    MtStack<double> sd;
+    // Тест на корректность конструкторов, операторов копии и перемещения
+    {
+        MtStack<double> sd1("double1");
+        MtStack<double> sd2("double2");
+        sd2.push(1.1);
+        sd2.push(2.2);
+        MtStack<double> sd3("double3");
+        sd3.push(3.3);
+        sd3.push(4.4);
+        sd3.push(5.5);
+
+        sd3 = sd2;
+        sd1 = std::move(sd2);
+        MtStack<double> sd4(sd1);
+    }
     
+    // Тест на многопоточное использование стека
+    MtStack<double> sd1("double1");
+    MtStack<double> sd2("double2");
+
     std::vector<std::thread> threads;
-    std::condition_variable cv;
-    std::mutex mt;
-    for (size_t i = 0; i < thread_count; ++i) {
-        threads.emplace_back(&producer, std::ref(sd), std::chrono::milliseconds(1), 2000, std::ref(cv));
-    }
+
+    for (size_t i = 0; i < PRODUCER_THREAD_COUNT; ++i)
+        threads.emplace_back(&producer, std::ref(sd1), std::chrono::microseconds(1000));
+    for (size_t i = 0; i < PRODUCER_THREAD_COUNT; ++i)
+        threads.emplace_back(&producer, std::ref(sd2), std::chrono::microseconds(1000));
+    threads.emplace_back(&consumer1<double>, std::ref(sd1), std::chrono::microseconds(100));
+    threads.emplace_back(&consumer2<double>, std::ref(sd2), std::chrono::microseconds(600));
+
+    // Дожидаемся запуска хотя бы одного продюсера
+    while (!is_producer_started)
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     
-    {
-        std::unique_lock lock(mt);
-        cv.wait(lock, [&sd] { return sd.empty(); });
+    for (size_t i = 0; i < RUN_SECONDS; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
+        // вывод текущего состояния каждого из стеков
+        std::cout << "1th stack: size is " << sd1.size() << std::endl;
+        std::cout << "2th stack: size is " << sd2.size() << std::endl;
+
+        // меняем стеки местами
+        MtStack<double> tmp(sd1);
+        sd1 = std::move(sd2);
+        sd2 = std::move(tmp);
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-
-    std::thread ct1(&consumer1<double>, std::ref(sd), std::chrono::milliseconds(1));
-    std::thread ct2(&consumer2<double>, std::ref(sd), std::chrono::milliseconds(1));
-
-    size_t cnt;
-    do
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        cnt = sd.size(); 
-        std::cout << "stack: size is " << cnt << std::endl;
-    } while (cnt);
+    is_stopped = true;
 
     for (auto& th : threads) {
         if (th.joinable())
             th.join();
     }
 
-    ct1.join();
-    ct2.join();
+    std::cout << "1th stack: size is " << sd1.size() << std::endl;
+    std::cout << "2th stack: size is " << sd2.size() << std::endl;
+
+    // Вопрос к преподавателю - очень странно работают таймауты..
+    // 1) Я запускаю по три продюсера на стек, каждый продюсер должен записывать ~1000 значений/сек,
+    // но по факту записывается всего около 1100, почему???
+    // 2) Я запускаю потребителя для первого стека с интервалом 100 мкс, он должен вычерпывать стек досуха,
+    // но этого не происходит, почему???
+    // 3) Второй потребитель работает с интервалом 600 мкс, но по факту он вычерпывает столько же данных,
+    // сколько и первый, почему???
+    // Буду признателен за разъяснения.
 }
 
 // Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"
