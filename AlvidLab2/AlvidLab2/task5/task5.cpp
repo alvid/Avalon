@@ -7,15 +7,15 @@
 #include <numeric>
 #include <random>
 #include <functional>
+#include <string>
+#include <future>
 
+#include "..\..\..\Common\Timeter.hpp"
 #include "Fifo.hpp"
 
 enum {
     FIFO_SIZE = 32,
-    WORKER_THREAD_COUNT = 1,
-    EXECUTOR_THREAD_COUNT = 1,
-    ELEM_COUNT = 10,
-    RUN_COUNT = 32000
+    WORKER_TIME_NS = 2000,
 };
 
 using Task = std::function<int()>;
@@ -23,93 +23,104 @@ using Fifo_type = Fifo<Task, FIFO_SIZE>;
 
 // The simple function, that is used as Task for FIFO
 template <typename T>
-T sum(std::vector<T> numbers)
+T sum(std::vector<T> const& numbers)
 {
     static_assert(std::is_constructible_v<T>);
     return std::accumulate(numbers.begin(), numbers.end(), T(0));
 }
 
-void worker_routine(Fifo_type& fifo, size_t elem_count, size_t run_count)
+// Функция генерирует задачи для исполнителя.
+// Размер вектора для задачи расчета задается параметром elem_count.
+std::ostringstream producer_routine(Fifo_type& fifo, size_t elem_count)
 {
+    std::ostringstream oss;
     std::random_device rd;
     std::mt19937 g(rd());
 
-    auto ts = std::chrono::steady_clock::now();
+    Timeter tm("producer");
 
-    for (size_t i = 0; i < run_count; ++i) {
+    for (;;) {
         std::vector<int> numbers;
         for (size_t j = 0; j < elem_count; ++j)
             numbers.push_back(g());
-        auto res = fifo.push_back(std::bind(&sum<decltype(numbers)::value_type>, std::move(numbers)));
+        auto res = fifo.push_back([numbers = std::move(numbers)] { return sum(numbers); });
         if (res == Fifo_type::Ret_code::eInterrupted)
             break;
-        // эмулируем задержку до прихода следующей задачи
-        std::this_thread::sleep_for(std::chrono::nanoseconds(200));
     }
 
-    auto te = std::chrono::steady_clock::now();
-    auto dt = std::chrono::duration_cast<std::chrono::microseconds>(te - ts);
-
-    //    oss << std::endl
-    //        << "worker[" << std::this_thread::get_id() << "]: "
-    //        << "pushes " << fifo.push_tasks << " tasks"
-    //        << ", run/wait for " << dt.count() << "/" << fifo.wait_for_free_space_us.count() << " us"
-    //        << std::endl;
+    auto work_time = tm.reset2();
+    auto [ss1, ms1, us1] = split_duration(work_time);
+    auto idle_time = fifo.wait_for_free_space;
+    auto [ss2, ms2, us2] = split_duration(idle_time);
+    oss << "producer[" << std::this_thread::get_id() << "]: " << std::endl
+        << "\tpush " << fifo.push_tasks << " tasks" << std::endl
+        << "\twork for " << ss1.count() << "s::" << ms1.count() << "ms::" << us1.count() << "us" << std::endl
+        << "\twait for " << ss2.count() << "s::" << ms2.count() << "ms::" << us2.count() << "us" << std::endl
+        << "\tidle time " << 100 * idle_time / work_time << " %" << std::endl;
+    return oss;
 }
 
-void executor_routine(Fifo_type& fifo)
+std::ostringstream worker_routine(Fifo_type& fifo)
 {
+    std::ostringstream oss;
     Fifo_type::Ret_code res;
     Task task;
 
-    auto ts = std::chrono::steady_clock::now();
+    Timeter tm("worker");
 
     while ((res = fifo.pop_front(task)) != Fifo_type::Ret_code::eInterrupted) {
         if (task)
             int rc = task();
         // эмулируем тяжелую работу
-        std::this_thread::sleep_for(std::chrono::nanoseconds(1000));
+        std::this_thread::sleep_for(std::chrono::nanoseconds(WORKER_TIME_NS));
     }
 
-    auto te = std::chrono::steady_clock::now();
-    auto dt = std::chrono::duration_cast<std::chrono::microseconds>(te - ts);
-
-    //    oss << std::endl
-    //        << "executor[" << std::this_thread::get_id() << "]: "
-    //        << "popes " << fifo.pop_tasks << " tasks"
-    //        << ", run/wait for " << dt.count() << "/" << fifo.wait_for_task_us.count() << " us"
-    //        << std::endl;
+    auto work_time = tm.reset2();
+    auto [ss1, ms1, us1] = split_duration(work_time);
+    auto idle_time = fifo.wait_for_task;
+    auto [ss2, ms2, us2] = split_duration(idle_time);
+    oss << "worker[" << std::this_thread::get_id() << "]: " << std::endl
+        << "\tpop " << fifo.pop_tasks << " tasks" << std::endl
+        << "\twork for " << ss1.count() << "s::" << ms1.count() << "ms::" << us1.count() << "us" << std::endl
+        << "\twait for " << ss2.count() << "s::" << ms2.count() << "ms::" << us2.count() << "us" << std::endl
+        << "\tidle time " << 100 * idle_time / work_time << " %" << std::endl;
+    return oss;
 }
 
 int main()
 {
-    std::cout << "Hello, asynchronous World!" << std::endl;
+    enum {
+        WORKER_THREAD_COUNT = 2,
+        EXECUTOR_THREAD_COUNT = 2,
+        ELEM_COUNT = 3'000,
+        WORK_SECONDS = 3
+    };
 
     Fifo_type fifo;
 
-    std::vector<std::thread> threads(EXECUTOR_THREAD_COUNT + WORKER_THREAD_COUNT);
-    std::vector<std::ostringstream> results(EXECUTOR_THREAD_COUNT + WORKER_THREAD_COUNT);
-
-    for (size_t i = 0; i < EXECUTOR_THREAD_COUNT; ++i)
-        threads.emplace_back(&executor_routine, std::ref(fifo));
+    std::vector<std::future<std::ostringstream>> threads;
+    threads.reserve(EXECUTOR_THREAD_COUNT + WORKER_THREAD_COUNT);
 
     for (size_t i = 0; i < WORKER_THREAD_COUNT; ++i)
-        threads.emplace_back(&worker_routine, std::ref(fifo), ELEM_COUNT, RUN_COUNT);
+        threads.push_back(std::async(std::launch::async, &producer_routine, std::ref(fifo), (size_t)ELEM_COUNT));
 
-    std::this_thread::sleep_for(std::chrono::seconds(2));
+    for (size_t i = 0; i < EXECUTOR_THREAD_COUNT; ++i)
+        threads.push_back(std::async(std::launch::async, &worker_routine, std::ref(fifo)));
+
+    for (int i = 0; i < WORK_SECONDS*10; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::cout << "fifo state: " << fifo.state() << std::endl;
+    }
+
     std::vector<Task> nft;
     fifo.stop(nft);
 
+    std::cout << std::endl;
+    for (auto& item : threads) {
+        auto oss = item.get();
+        std::cout << oss.str() << std::endl;
+    }
     std::cout << "fifo has " << nft.size() << " non finished task(s)" << std::endl;
-    std::cout << "join all threads" << std::endl;
-
-    for (auto& item : threads)
-        item.join();
-
-    for (auto& item : results)
-        std::cout << item.str() << std::endl;
-
-    return 0;
 }
 
 // Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"

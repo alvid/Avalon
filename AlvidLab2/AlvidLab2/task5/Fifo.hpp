@@ -24,27 +24,55 @@ public:
         eInterrupted
     };
 
-    Fifo() : ix_read(0), ix_write(0), cur_size(0)
+    Fifo() : stopped_flag(false), ix_read(0), ix_write(0), cur_size(0)
     {
+        memset(buf, '_', N);
+        buf[N] = '\0';
+    }
+
+    Fifo(Fifo const& ref)
+    {
+        std::unique_lock lock(ref.mt);
+
+        queue = ref.queue;
+        memcpy(buf, ref.buf, N);
+        ix_read = ref.ix_read;
+        ix_write = ref.ix_write;
+        cur_size = ref.cur_size;
+        stopped_flag = ref.stopped_flag;
+    }
+
+    Fifo& operator=(Fifo const& ref)
+    {
+        if (this != &ref) {
+            std::scoped_lock lock(ref.mt, mt);
+
+            queue = ref.queue;
+            memcpy(buf, ref.buf, N);
+            ix_read = ref.ix_read;
+            ix_write = ref.ix_write;
+            cur_size = ref.cur_size;
+            stopped_flag = ref.stopped_flag;
+        }
+        return *this;
     }
 
     // Команда прекращения работы, вынуждает прервать обслуживание заявок из буфера и пробудить все ждущие потоки.
     void stop(std::vector<Task> &non_performed_tasks)
     {
-        std::cout << "INTERRUPT" << std::endl;
         stopped_flag = true;
         cv_free.notify_all();
         cv.notify_all();
 
-        std::this_thread::yield();
+        std::this_thread::yield(); // TODO: этого недостаточно для вывода из ожидания всех ждущих потоков
 
         std::unique_lock lock(mt);
-        while(ix_read != ix_write) {
-            non_performed_tasks.push_back(queue[ix_read]);
-            if(++ix_read == queue.max_size())
+        while(cur_size) {
+            non_performed_tasks.push_back(queue[ix_read++]);
+            if(ix_read == queue.max_size()) 
                 ix_read = 0;
+            --cur_size;
         }
-        cur_size = 0;
     }
 
     // Положить задачу в хвост очереди. Если очередь заполнена, поток будет заблокирован до появления свободного места.
@@ -61,32 +89,30 @@ public:
             {
                 std::unique_lock lock_free(mt_free);
                 cv_free.wait(lock_free, [&] { return cur_size != queue.max_size() || stopped_flag; });
-                if(stopped_flag)
-                    return Ret_code::eInterrupted;
+                if (stopped_flag)
+                    break;
             }
             lock.lock();
         }
         if(wait) {
             auto te = std::chrono::steady_clock::now();
-            auto dt = std::chrono::duration_cast<std::chrono::microseconds>(te - ts);
-            wait_for_free_space_us += dt;
+            auto dt = te - ts;
+            wait_for_free_space += dt;
         }
 
         if(stopped_flag)
             return Ret_code::eInterrupted;
 
-        std::cout << "PUSH" << ix_write << std::endl;
         queue[ix_write] = request;
+        buf[ix_write] = 'X';
         if(++ix_write == queue.max_size())
             ix_write = 0;
         ++cur_size;
 
         ++push_tasks;
 
-        if(cur_size == 1) {
-            std::cout << "NOTIFY";
+        if(cur_size == 1)
             cv.notify_one();
-        }
 
         return Ret_code::eGood;
     }
@@ -107,18 +133,17 @@ public:
         }
         if(wait) {
             auto te = std::chrono::steady_clock::now();
-            auto dt = std::chrono::duration_cast<std::chrono::microseconds>(te - ts);
-            wait_for_task_us += dt;
+            auto dt = te - ts;
+            wait_for_task += dt;
         }
 
         if(stopped_flag)
             return Ret_code::eInterrupted;
 
-        std::cout << "POP" << ix_read;
-
         ++pop_tasks;
 
         result = queue[ix_read];
+        buf[ix_read] = '_';
         if(++ix_read == queue.max_size())
             ix_read = 0;
         if(cur_size-- == queue.max_size())
@@ -126,11 +151,17 @@ public:
         return Ret_code::eGood;
     }
 
+    std::string state()
+    {
+        std::unique_lock lock(mt);
+        return std::string((char*)buf);
+    }
+
 public:
-    inline static thread_local std::chrono::microseconds wait_for_free_space_us{0};
+    inline static thread_local std::chrono::duration<double> wait_for_free_space{0};
     inline static thread_local uint64_t push_tasks{0};
 
-    inline static thread_local std::chrono::microseconds wait_for_task_us{0};
+    inline static thread_local std::chrono::duration<double> wait_for_task{0};
     inline static thread_local uint64_t pop_tasks{0};
 
 private:
@@ -146,5 +177,7 @@ private:
     size_t ix_read;
     size_t ix_write;
     size_t cur_size;
+
+    char buf[N+1];    // для индикации занятости
 };
 

@@ -139,9 +139,9 @@ int main(int argc, char *argv[])
         std::cout << "2th stack: size is " << sd2.size() << std::endl;
 
         // меняем стеки местами
-        MtStack<double> tmp(sd1);
-        sd1 = std::move(sd2);
-        sd2 = std::move(tmp);
+        //MtStack<double> tmp(sd1);
+        //sd1 = std::move(sd2);
+        //sd2 = std::move(tmp);
     }
 
     is_stopped = true;
