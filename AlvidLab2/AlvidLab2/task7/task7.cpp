@@ -15,9 +15,36 @@
 
 #include <iostream>
 
+#include "ThreadPool.hpp"
+#include "..\..\..\Common\Timeter.hpp"
+
+class Stupid_task : public Task {
+public:
+	void do_work() override {
+	}
+};
+
 int main()
 {
+	enum {
+		THREAD_COUNT = 0,
+		TASK_COUNT = 100,
+	};
+	
+	Timeter2 tm;
 
+	Thread_pool tp(THREAD_COUNT);
+	for (size_t i = 0; i < TASK_COUNT; ++i)
+		tp.add_task(std::unique_ptr<Stupid_task>(new Stupid_task()));
+
+	auto [ss1, ms1, us1] = split_duration(tm.reset());
+
+	for (size_t i = 0; i < TASK_COUNT; ++i) {
+		Stupid_task st();
+		st();
+	}
+
+	auto [ss2, ms2, us2] = split_duration(tm.reset());
 }
 
 // Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"

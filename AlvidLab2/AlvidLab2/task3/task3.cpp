@@ -41,7 +41,7 @@ typename CONT::value_type parallelAccumulate(CONT const& data_storage, int threa
     auto first = data_storage.cbegin();
     auto last = first;
     for (int i = 0; i < thread_count; ++i) {
-        last += elem_range;//std::advance(last, elem_range); //непонятно, в чем выигрыш цикла по сравнению с инкрементом итератора?!
+        std::advance(last, elem_range);
         partial_sum.push_back(std::async(std::launch::async, []
             (typename CONT::const_iterator first, typename CONT::const_iterator last) {
                 return std::accumulate(first, last, Value_type(0));
