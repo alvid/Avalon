@@ -92,9 +92,9 @@ int main()
         auto first = vec.begin();
         auto last = first;
         for (int i = 0; i < thread_count; ++i) {
-            last += elem_range;//std::advance(last, elem_range); //непонятно, в чем выигрыш цикла по сравнению с инкрементом итератора?!
+            std::advance(last, elem_range);
             partial_sum.push_back(std::async(std::launch::async, []
-            (decltype(vec)::const_iterator first, decltype(vec)::const_iterator last) {
+                (decltype(vec)::const_iterator first, decltype(vec)::const_iterator last) {
                     return std::accumulate(first, last, 0);
                 }, first, last));
             first = last;

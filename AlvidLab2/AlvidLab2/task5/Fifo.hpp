@@ -78,7 +78,7 @@ public:
     // Положить задачу в хвост очереди. Если очередь заполнена, поток будет заблокирован до появления свободного места.
     // Ожидающий поток может быть разблокирован по внешнему сигналу прерывания работы, в этом случае задача не кладется
     // в очередь и возвращается код eInterrupted.
-    Ret_code push_back(Task const& request)
+    Ret_code push_back(Task && request)
     {
         std::unique_lock lock(mt);
 
@@ -103,7 +103,7 @@ public:
         if(stopped_flag)
             return Ret_code::eInterrupted;
 
-        queue[ix_write] = request;
+        queue[ix_write] = std::move(request);
         buf[ix_write] = 'X';
         if(++ix_write == queue.max_size())
             ix_write = 0;
@@ -158,10 +158,14 @@ public:
     }
 
 public:
+    // замеряем общее время ожидания освобождения буфера для потока-поставщика задач
     inline static thread_local std::chrono::duration<double> wait_for_free_space{0};
+    // замеряем общее число задач, размещенных потоком-поставщиком
     inline static thread_local uint64_t push_tasks{0};
-
+    
+    // замеряем общее время ожидания задачи для потока-потребителя задач
     inline static thread_local std::chrono::duration<double> wait_for_task{0};
+    // замеряем общее число задач, извлеченных потоком-потребителем
     inline static thread_local uint64_t pop_tasks{0};
 
 private:
@@ -173,11 +177,11 @@ private:
     std::mutex mt_free;
     std::condition_variable cv_free;
 
-    std::array<Task, N> queue;
+    std::array<Task, N> queue;  // кольцевой буфер
     size_t ix_read;
     size_t ix_write;
     size_t cur_size;
 
-    char buf[N+1];    // для индикации занятости
+    char buf[N+1];    // буфер используется для визуальной индикации занятости: '_' - ячейка пуста, 'X' - ячейка занята
 };
 

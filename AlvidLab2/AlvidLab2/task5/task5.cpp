@@ -1,5 +1,11 @@
 ﻿// task5.cpp : Этот файл содержит функцию "main". Здесь начинается и заканчивается выполнение программы.
 //
+//Задание 5. Потокобезопасная кольцевая очередь фиксированного размера на базе условных переменных
+//Имитируем формирование и обработку «заявок» посредством многопоточной очереди.
+//Потоки - писатели заносят очередную «заявку» в конец очереди (при этом, если в очереди нет места, 
+//писатель должен ждать, пока место появится).
+//Потоки - читатели должны изъять заявку из начала очереди и обработать (при этом, если в очереди заявок нет, 
+//читатель должен ждать, пока какой - нибудь писатель заявку сформирует).
 
 #include <iostream>
 #include <thread>
@@ -11,7 +17,7 @@
 #include <future>
 
 #include "..\..\..\Common\Timeter.hpp"
-#include "Fifo.hpp"
+#include "..\..\..\Common\Fifo.hpp"
 
 enum {
     FIFO_SIZE = 32,
@@ -37,7 +43,7 @@ std::ostringstream producer_routine(Fifo_type& fifo, size_t elem_count)
     std::random_device rd;
     std::mt19937 g(rd());
 
-    Timeter tm("producer");
+    Timeter2 tm;
 
     for (;;) {
         std::vector<int> numbers;
@@ -48,7 +54,7 @@ std::ostringstream producer_routine(Fifo_type& fifo, size_t elem_count)
             break;
     }
 
-    auto work_time = tm.reset2();
+    auto work_time = tm.reset();
     auto [ss1, ms1, us1] = split_duration(work_time);
     auto idle_time = fifo.wait_for_free_space;
     auto [ss2, ms2, us2] = split_duration(idle_time);
@@ -66,7 +72,7 @@ std::ostringstream worker_routine(Fifo_type& fifo)
     Fifo_type::Ret_code res;
     Task task;
 
-    Timeter tm("worker");
+    Timeter2 tm;
 
     while ((res = fifo.pop_front(task)) != Fifo_type::Ret_code::eInterrupted) {
         if (task)
@@ -75,7 +81,7 @@ std::ostringstream worker_routine(Fifo_type& fifo)
         std::this_thread::sleep_for(std::chrono::nanoseconds(WORKER_TIME_NS));
     }
 
-    auto work_time = tm.reset2();
+    auto work_time = tm.reset();
     auto [ss1, ms1, us1] = split_duration(work_time);
     auto idle_time = fifo.wait_for_task;
     auto [ss2, ms2, us2] = split_duration(idle_time);
@@ -122,6 +128,33 @@ int main()
     }
     std::cout << "fifo has " << nft.size() << " non finished task(s)" << std::endl;
 }
+
+//Результаты для 2-х потоков-писателей и 2-х читателей:
+//
+//producer[3396]:
+//push 441 tasks
+//work for 3s::85ms::791us
+//wait for 2s::167ms::335us
+//idle time 70.236 %
+//
+//producer[5004]:
+//push 2053 tasks
+//work for 3s::86ms::2us
+//wait for 0s::31ms::14us
+//idle time 1.00502 %
+//
+//worker[16484]:
+//pop 1353 tasks
+//work for 3s::86ms::143us
+//wait for 2s::28ms::697us
+//idle time 65.7357 %
+//
+//worker[22132]:
+//pop 1141 tasks
+//work for 3s::85ms::235us
+//wait for 2s::221ms::474us
+//idle time 72.0034 %
+//
 
 // Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"
 // Отладка программы: F5 или меню "Отладка" > "Запустить отладку"
