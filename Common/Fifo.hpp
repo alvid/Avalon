@@ -64,7 +64,7 @@ public:
         cv_free.notify_all();
         cv.notify_all();
 
-        std::this_thread::yield(); // TODO: этого недостаточно для вывода из ожидания всех ждущих потоков
+        std::this_thread::yield(); // TODO: этого недостаточно для вывода из ожидания всех ждущих потоков (CV+COUNTER)
 
         std::unique_lock lock(mt);
         while(cur_size) {

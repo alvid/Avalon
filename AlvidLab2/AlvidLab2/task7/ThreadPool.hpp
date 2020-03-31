@@ -6,9 +6,12 @@
 #include <atomic>
 #include <deque>
 #include <chrono>
+#include <memory>
 
 class Task {
 public:
+	using Ptr = std::unique_ptr<Task>;
+
 	inline static std::atomic_uint create_counter{ 0 };
 	inline static std::atomic_uint delete_counter{ 0 };
 
@@ -40,23 +43,24 @@ public:
 			threads.emplace_back(&Thread_pool::thread_routine, this, &thread_exec_task_count[i]);
 		}
 	}
-	// Непонятно, для каких целей требуются конструкторы?!..
-	Thread_pool(Thread_pool const& ref) = delete;
-	Thread_pool(Thread_pool && ref) = delete;
-	
+	Thread_pool(Thread_pool const&) = delete;
+	Thread_pool(Thread_pool &&) = delete;
+	Thread_pool& operator=(Thread_pool const&) = delete;
+	Thread_pool& operator=(Thread_pool &&) = delete;
+
 	~Thread_pool()
 	{
 		if (!stopped_flag)
 			stop();
 	}
 
-	void add_task(Task *task)
+	void add_task(Task::Ptr task)
 	{
 		//if (stopped_flag)
 		//	throw std::runtime_error("thread pool is already stopped!");
 		++recv_task_count;
 		std::unique_lock lock(mt);
-		tq.push_back(task);
+		tq.push_back(std::move(task));
 	}
 
 	size_t task_count()
@@ -79,10 +83,9 @@ private:
 		
 		// выполняем ждущие задания
 		while(tq.size()) {
-			auto &task = tq.front();
-			(*task)();
+			auto task = std::move(tq.front());
 			tq.pop_front();
-			delete task;
+			(*task)();
 		}
 	}
 
@@ -97,19 +100,18 @@ private:
 				std::this_thread::sleep_for(100us);
 				continue;
 			}
-			auto &task = tq.front();
+			auto task = std::move(tq.front());
 			tq.pop_front();
 			lock.unlock();
 
 			(*task)();
-			delete task;
 
 			++(*exec_task_count);
 		}
 	}
 
 private:
-	std::deque<Task*> tq;
+	std::deque<Task::Ptr> tq;
 	std::mutex mt;
 	std::vector<std::thread> threads;
 	std::atomic_bool stopped_flag;
