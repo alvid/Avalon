@@ -14,37 +14,89 @@
 //•	Интересно было бы «посчитать» сколько заданий выполнил каждый поток
 
 #include <iostream>
+#include <chrono>
+#include <thread>
+#include <future>
+#include <numeric>
+#include <random>
+#include <array>
 
 #include "ThreadPool.hpp"
-#include "..\..\..\Common\Timeter.hpp"
+#include "..\Common\Timeter.hpp"
 
+template <typename T>
 class Stupid_task : public Task {
 public:
-	void do_work() override {
+	Stupid_task(size_t cnt, T *pRes) : Task(), count(cnt), pResult(pRes)
+	{
+		static_assert(std::is_constructible_v<T>);
 	}
+
+	void do_work() override 
+	{
+		std::random_device rd;
+		std::mt19937 g(rd());
+		numbers.reserve(count);
+		for (size_t i = 0; i < count; ++i)
+			numbers.push_back(g());
+		*pResult = std::accumulate(numbers.begin(), numbers.end(), T(0));
+	}
+
+private:
+	size_t count;
+	std::vector<T> numbers;
+	T* pResult;
 };
 
 int main()
 {
 	enum {
 		THREAD_COUNT = 0,
-		TASK_COUNT = 100,
+		TASK_COUNT = 1000,
+		NUMBERS_COUNT = 1000
 	};
-	
+
+	std::array<int, TASK_COUNT> results;
+
 	Timeter2 tm;
-
-	Thread_pool tp(THREAD_COUNT);
-	for (size_t i = 0; i < TASK_COUNT; ++i)
-		tp.add_task(std::unique_ptr<Stupid_task>(new Stupid_task()));
-
-	auto [ss1, ms1, us1] = split_duration(tm.reset());
-
+	
 	for (size_t i = 0; i < TASK_COUNT; ++i) {
-		Stupid_task st();
-		st();
+		//TODO:  приводит к крашу в Thread_pool::thread_routine() на вызове оператора () уже удаленного объекта
+		//auto task = std::make_unique<Stupid_task<int>>((size_t) NUMBERS_COUNT, &results[i]);
+		auto task = new Stupid_task<int>((size_t)NUMBERS_COUNT, &results[i]);
+		(*task)();
+		delete task;
 	}
-
+	auto [ss1, ms1, us1] = split_duration(tm.reset());
+	
+	{
+		//TODO: если переместить блок вниз (или добавить еще один), это приводит к крашу в Thread_pool::thread_routine() на вызове оператора () уже удаленного объекта
+		Thread_pool tp(THREAD_COUNT);
+		for (size_t i = 0; i < TASK_COUNT; ++i)
+			tp.add_task(new Stupid_task<int>((size_t) NUMBERS_COUNT, &results[i]));
+		while (tp.task_count())
+			std::this_thread::sleep_for(100us);
+	}
 	auto [ss2, ms2, us2] = split_duration(tm.reset());
+		
+	{
+		std::vector<std::future<void>> futures;
+		futures.reserve(TASK_COUNT);
+		for (size_t i = 0; i < TASK_COUNT; ++i)
+			futures.push_back(std::async(std::launch::async, [task = std::make_unique<Stupid_task<int>>((size_t) NUMBERS_COUNT, &results[i])] {
+					(*task.get())();
+				}));
+
+		for (auto& item : futures)
+			item.get();
+	}
+	auto [ss3, ms3, us3] = split_duration(tm.reset());
+
+	std::cout << "created " << Task::create_counter << " tasks" << ", deleted " << Task::delete_counter << " tasks" << std::endl
+		<< "\tmain program work time is " << ss1.count() << "s::" << ms1.count() << "ms::" << us1.count() << "us" << std::endl
+		<< "\t thread pool work time is " << ss2.count() << "s::" << ms2.count() << "ms::" << us2.count() << "us" << std::endl
+		<< "\t      thread work time is " << ss3.count() << "s::" << ms3.count() << "ms::" << us3.count() << "us" << std::endl
+		<< std::endl;
 }
 
 // Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"

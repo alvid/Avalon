@@ -7,7 +7,8 @@
 #include <limits>
 #include <algorithm>
 #include <execution>
-#include "..\..\..\Common\Timeter.hpp"
+
+#include "..\Common\Timeter.hpp"
 
 int main(int argc, char *argv[])
 {

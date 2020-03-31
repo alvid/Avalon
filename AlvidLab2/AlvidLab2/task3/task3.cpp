@@ -11,7 +11,7 @@
 #include <vector>
 #include <deque>
 
-#include "..\..\..\Common\Timeter.hpp"
+#include "..\Common\Timeter.hpp"
 
 template <typename CONT>
 void printT(CONT const& data_storage)
