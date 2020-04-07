@@ -20,8 +20,9 @@ struct Timeter {
     time_point<steady_clock> te;
     bool is_reset;
 
-    Timeter(std::string&& a_name = "") 
-        : name(std::move(a_name))
+    template <typename STR>
+    Timeter(STR && a_name = "")
+        : name(std::forward<STR>(a_name))
         , is_reset(false)
     {
         ts = te = steady_clock::now();

@@ -61,19 +61,15 @@ int main()
 	Timeter2 tm;
 	
 	for (size_t i = 0; i < TASK_COUNT; ++i) {
-		//TODO:  приводит к крашу в Thread_pool::thread_routine() на вызове оператора () уже удаленного объекта
-		//auto task = std::make_unique<Stupid_task<int>>((size_t) NUMBERS_COUNT, &results[i]);
-		auto task = new Stupid_task<int>((size_t)NUMBERS_COUNT, &results[i]);
+		auto task = std::make_unique<Stupid_task<int>>((size_t) NUMBERS_COUNT, &results[i]);
 		(*task)();
-		delete task;
 	}
 	auto [ss1, ms1, us1] = split_duration(tm.reset());
 	
 	{
-		//TODO: если переместить блок вниз (или добавить еще один), это приводит к крашу в Thread_pool::thread_routine() на вызове оператора () уже удаленного объекта
 		Thread_pool tp(THREAD_COUNT);
 		for (size_t i = 0; i < TASK_COUNT; ++i)
-			tp.add_task(new Stupid_task<int>((size_t) NUMBERS_COUNT, &results[i]));
+			tp.add_task(std::make_unique<Stupid_task<int>>((size_t) NUMBERS_COUNT, &results[i]));
 		while (tp.task_count())
 			std::this_thread::sleep_for(100us);
 	}
@@ -98,6 +94,20 @@ int main()
 		<< "\t      thread work time is " << ss3.count() << "s::" << ms3.count() << "ms::" << us3.count() << "us" << std::endl
 		<< std::endl;
 }
+
+// Результаты работы программы:
+//
+//thread pool statistics :
+//received thread count : 1000
+//[thread #0] : execute 235 tasks
+//[thread #1] : execute 273 tasks
+//[thread #2] : execute 237 tasks
+//[thread #3] : execute 255 tasks
+//created 3000 tasks, deleted 3000 tasks
+//main program work time is 0s::630ms::698us
+//thread pool work time is 0s::305ms::531us
+//thread work time is 0s::307ms::306us
+//
 
 // Запуск программы: CTRL+F5 или меню "Отладка" > "Запуск без отладки"
 // Отладка программы: F5 или меню "Отладка" > "Запустить отладку"
