@@ -5,7 +5,7 @@
 #include <thread>
 #include <algorithm>
 #include <chrono>
-#include <strstream>
+#include <sstream>
 
 #include "Store.hpp"
 #include "../../Common/Timeter.hpp"
@@ -62,7 +62,7 @@ void Store::th_monitor()
 #endif
     size_t sz;
     while(!stopped_flag) {
-        std::ostrstream oss;
+        std::ostringstream oss;
         std::this_thread::sleep_for(500ms);
         for (auto const &store: stores) {
             if (store->size(sz))
