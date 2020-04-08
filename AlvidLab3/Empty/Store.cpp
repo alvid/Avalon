@@ -3,6 +3,7 @@
 //
 
 #include <thread>
+#include <algorithm>
 
 #include "Store.hpp"
 #include "../../Common/Timeter.hpp"
@@ -24,13 +25,13 @@ void Store::acquire(std::string const& good, size_t ideal_store, std::chrono::du
     } while(!is_good_placed);
 }
 
-Store::Ret_code Store::release(std::string &good, size_t ideal_store, std::chrono::duration<double> dur)
+Store::Ret_code Store::release(std::string &good, size_t ideal_store, Dur dur)
 {
     std::vector<Store::Ret_code> results(stores.size(), eBusy);
-    Store::Ret_code res;
+    Store::Ret_code res = eBusy;
     do {
         Store *store = stores[ideal_store].get();
-        auto res = store->try_release(good, dur);
+        res = store->try_release(good, dur);
         if(res == eOk)
             return eOk;
         results[ideal_store] = res;
