@@ -13,6 +13,8 @@
 #include <memory>
 #include <condition_variable>
 
+#include "Types.hpp"
+
 class Store {
 public:
     enum Ret_code {
@@ -22,8 +24,8 @@ public:
     };
 
     static void create(std::vector<size_t> const& all_capacities);
-    static void acquire(std::string const& good, size_t ideal_store, std::chrono::duration<double> dur);
-    static Store::Ret_code release(std::string &good, size_t ideal_store, std::chrono::duration<double> dur);
+    static void acquire(std::string const& good, size_t ideal_store, Dur dur);
+    static Store::Ret_code release(std::string &good, size_t ideal_store, Dur dur);
 
     explicit Store(size_t a_capacity);
 
