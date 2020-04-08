@@ -12,7 +12,7 @@
 
 using namespace std::chrono_literals;
 
-void Store::acquire(std::string const& good, size_t ideal_store, std::chrono::duration<double> dur)
+void Store::acquire(std::string const& good, size_t ideal_store, Dur dur)
 {
     bool is_good_placed;
     do {
