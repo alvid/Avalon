@@ -32,6 +32,10 @@ Fut Consumer::receive_goods()
 
 Dur Consumer::thr_receive_goods()
 {
+#if __APPLE__
+    pthread_setname_np("Consumer__receive_goods");
+#endif
+
     Timeter2 tm;
 
     std::string good;
@@ -40,6 +44,8 @@ Dur Consumer::thr_receive_goods()
         rc = Store::release(good, ideal_store, wait_for_store);
         goods.push_back(good);
     } while(rc != Store::eEmpty);
+
+    std::cout << "Consumer has finished";
 
     return tm.reset();
 }
