@@ -92,9 +92,7 @@ bool Store::size(size_t &sz) const
 bool Store::try_acquire(std::string const& good, std::chrono::duration<double> dur)
 {
     Timeter2 tm;
-    assert(dur.count() >= 0);
     if(mt.try_lock_for(dur)) {
-        assert(dur.count() >= 0);
         // ждем освобождения места на складе
         if(goods.size() == capacity) {
             mt.unlock();
@@ -119,24 +117,25 @@ bool Store::try_acquire(std::string const& good, std::chrono::duration<double> d
         }
         mt.unlock();
     }
+    //timeout
     return false;
 }
 
 Store::Ret_code Store::try_release(std::string &good, std::chrono::duration<double> dur)
 {
-    Timeter2 tm;
+    //Timeter2 tm;
     if(mt.try_lock_for(dur)) {
         // ждем поступления товара на склад
         if(goods.empty()) {
             mt.unlock();
             std::unique_lock lock(mt_has_goods);
-            dur -= tm.reset();
-            if(dur.count() < 0)
-                return eBusy;
+            //dur -= tm.reset();
+            //if(dur.count() < 0)
+            //    return eBusy;
             cv_has_goods.wait_for(lock, dur);
-            dur -= tm.reset();
-            if(dur.count() < 0)
-                return eBusy;
+            //dur -= tm.reset();
+            //if(dur.count() < 0)
+            //    return eBusy;
             if(!mt.try_lock_for(dur))
                 return eBusy;
         }

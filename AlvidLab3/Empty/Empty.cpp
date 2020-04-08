@@ -25,15 +25,16 @@ int main()
     std::vector<Fut> cons_futs;
 
     producers.push_back(std::make_unique<Producer>("T-shirt", 7, 0, 100ms));
-//    producers.push_back(std::make_unique<Producer>("Pants", 22, 1, 300ms));
-//    producers.push_back(std::make_unique<Producer>("Cap", 10, 1, 250ms));
-//    producers.push_back(std::make_unique<Producer>("Shoes", 44, 2, 100ms));
+    producers.push_back(std::make_unique<Producer>("Pants", 22, 1, 300ms));
+    producers.push_back(std::make_unique<Producer>("Cap", 10, 1, 250ms));
+    producers.push_back(std::make_unique<Producer>("Shoes", 44, 2, 100ms));
     producers.push_back(std::make_unique<Producer>("Shirt", 13, 0, 70ms));
 
+    std::this_thread::sleep_for(1ms);
     std::this_thread::yield();
 
-//    consumers.push_back(std::make_unique<Consumer>(2, 300ms));
-//    consumers.push_back(std::make_unique<Consumer>(1, 150ms));
+    consumers.push_back(std::make_unique<Consumer>(2, 300ms));
+    consumers.push_back(std::make_unique<Consumer>(1, 150ms));
     consumers.push_back(std::make_unique<Consumer>(0, 50ms));
 
     for(auto &producer: producers)
@@ -58,6 +59,7 @@ int main()
         std::cout << "Consumer has received all its goods by the time "
                   << ss.count() << "s::" << ms.count() << "ms::" << us.count() << "us" << " sec" << std::endl;
     }
+
     for(auto &item: consumers)
         item->show_goods(std::cout) << std::endl;
 }
