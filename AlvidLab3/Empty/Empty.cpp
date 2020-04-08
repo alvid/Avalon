@@ -17,33 +17,41 @@ int main()
 {
     using namespace std::chrono_literals;
 
-    Store::create({300, 2000, 600});
+    Store::create({2, 5, 3});
 
     std::vector<std::unique_ptr<Producer>> producers;
     std::vector<Fut> prod_futs;
     std::vector<std::unique_ptr<Consumer>> consumers;
     std::vector<Fut> cons_futs;
 
-    producers.push_back(std::make_unique<Producer>("T-shirt", 17, 0, 100ms));
-    producers.push_back(std::make_unique<Producer>("Pants", 22, 1, 700ms));
-    producers.push_back(std::make_unique<Producer>("Cap", 10, 1, 250ms));
-    producers.push_back(std::make_unique<Producer>("Shoes", 44, 2, 100ms));
-    producers.push_back(std::make_unique<Producer>("Shirt", 33, 0, 70ms));
+    producers.push_back(std::make_unique<Producer>("T-shirt", 7, 0, 100ms));
+//    producers.push_back(std::make_unique<Producer>("Pants", 22, 1, 300ms));
+//    producers.push_back(std::make_unique<Producer>("Cap", 10, 1, 250ms));
+//    producers.push_back(std::make_unique<Producer>("Shoes", 44, 2, 100ms));
+    producers.push_back(std::make_unique<Producer>("Shirt", 13, 0, 70ms));
 
-    consumers.push_back(std::make_unique<Consumer>(2, 300ms));
-    consumers.push_back(std::make_unique<Consumer>(1, 150ms));
+    std::this_thread::yield();
+
+//    consumers.push_back(std::make_unique<Consumer>(2, 300ms));
+//    consumers.push_back(std::make_unique<Consumer>(1, 150ms));
     consumers.push_back(std::make_unique<Consumer>(0, 50ms));
 
     for(auto &producer: producers)
         prod_futs.push_back(producer->deliver_goods());
+    std::cout << "All producers run" << std::endl;
+
+    //TODO: нужна защита от преждевременного завершения потока получателя, если поставщики не успеют поставить товар
+    for(auto &consumer: consumers)
+        cons_futs.push_back(consumer->receive_goods());
+    std::cout << "All consumers run" << std::endl;
+
+    Store::stop();
 
     for(auto &fut: prod_futs) {
         auto [ss, ms, us] = split_duration(fut.get());
         std::cout << "Producer has delivered all its goods by the time "
-            << ss.count() << "s::" << ms.count() << "ms::" << us.count() << "us" << " sec" << std::endl;
+                  << ss.count() << "s::" << ms.count() << "ms::" << us.count() << "us" << " sec" << std::endl;
     }
-    for(auto &consumer: consumers)
-        cons_futs.push_back(consumer->receive_goods());
 
     for(auto &fut: cons_futs) {
         auto [ss, ms, us] = split_duration(fut.get());

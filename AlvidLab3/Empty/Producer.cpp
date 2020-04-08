@@ -34,6 +34,10 @@ Fut Producer::deliver_goods()
 
 Dur Producer::p_deliver_goods()
 {
+#if __APPLE__
+    pthread_setname_np("Producer__p_deliver_goods");
+#endif
+
     Dur time_wait{0};
     std::vector<Fut> futures;
     for(auto const& good: goods)
@@ -45,6 +49,9 @@ Dur Producer::p_deliver_goods()
 
 Dur Producer::deliver_good(std::string const& good)
 {
+#if __APPLE__
+    pthread_setname_np("Producer__deliver_good");
+#endif
     Timeter2 tm;
     Store::acquire(good, ideal_store, wait_for_store);
     return tm.reset();
