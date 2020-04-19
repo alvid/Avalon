@@ -16,8 +16,9 @@
 #include <string>
 #include <future>
 
-#include "..\..\..\Common\Timeter.hpp"
-#include "..\..\..\Common\Fifo.hpp"
+#include "Timeter.hpp"
+#include "Fifo.hpp"
+#include "Spinlock.hpp"
 
 enum {
     FIFO_SIZE = 32,
